@@ -54,7 +54,7 @@ XJ380-Wine（代号 XSWL）是一个基于 [Qiling 框架](https://github.com/qi
 - 简单的消息对话框
 
 ### ❌ 暂未实现
-- 进程创建 (xapi_Fork, xapi_Execve)
+- 进程创建 (xapi_Execve)
 - 部分高级网络功能
 
 ## 🚀 快速开始
