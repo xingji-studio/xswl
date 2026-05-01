@@ -100,4 +100,4 @@ python XJ380-wine.py <程序路径> [参数...]
 详见 [LICENSE](LICENSE) 文件
 
 ##### in the end
-我是这个readme的编写者,我觉得这个兼容城的作者太sb了
+我是这个readme的编写者,我觉得这个兼容层的作者太sb了
