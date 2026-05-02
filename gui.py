@@ -637,5 +637,6 @@ def create_handler(root):
 
     return on_global_event
 def on_user_clothing():
+
     os._exit(0)
 

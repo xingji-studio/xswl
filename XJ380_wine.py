@@ -26,6 +26,7 @@ from internet import dns_resolve
 import shutil
 import platform
 trampoline_ret_addr = None
+serial=open("tty_output.txt","a")
 # 记录分配的内存
 Is_linux=False
 allocated_memory = {}
@@ -152,7 +153,7 @@ def my_raw_syscall_handler(ql: Qiling):
         string_output = ql.mem.string(ql.arch.regs.rdi)
         print(string_output)
 
-    elif syscall_num == 7386:  # xapi_OutputSerial
+    elif syscall_num == 7427:  # xapi_OutputSerial
         string_output = ql.mem.string(ql.arch.regs.rdi)
         print(f"[SERIAL] {string_output}")
 
