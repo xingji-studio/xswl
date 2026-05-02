@@ -11,7 +11,7 @@
 XJ380-Wine（代号 XSWL）是一个基于 [Qiling 框架](https://github.com/qilingframework/qiling) 构建的兼容层，专门用于在主流操作系统上运行 XJ380 操作系统的可执行文件。它通过模拟 XJ380 特有的系统调用，将图形界面、文件操作、网络功能等映射到宿主机的实际 API 上。
 
 ### 项目名称含义
-- **XSWL** = XJ380 SubSystems on Windows and Linux
+- **XSWL** = XJ380 SubSystems on Windows and Linux(戏称"笑死我了",Xiao Si Wo Le)
 - 致敬 Wine (Wine Is Not an Emulator)，采用类似的设计理念
 
 ## 🎯 主要特性
