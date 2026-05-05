@@ -429,6 +429,7 @@ def gui_syscall(ql: Qiling):
             print(f"[xapi_ReadBuffer] 错误: {e}")
             ql.arch.regs.rax = -1
 
+
     elif syscall_num == 7407:  # xapi_WriteBuffer (RGB)
         handle = ql.arch.regs.rdi
         x = ql.arch.regs.rsi
@@ -436,12 +437,10 @@ def gui_syscall(ql: Qiling):
         width = ql.arch.regs.r10
         height = ql.arch.regs.r8
         buffer_ptr = ql.arch.regs.r9
-
         win = windows.get(handle)
         if not win or not hasattr(win, 'canvas'):
             ql.arch.regs.rax = -1
             return
-
         # 从 guest 读取像素数据 (RGB 连续)
         data_size = width * height * 3
         pixels = ql.mem.read(buffer_ptr, data_size)
@@ -449,17 +448,40 @@ def gui_syscall(ql: Qiling):
             print(f"[xapi_WriteBuffer] 读取内存失败")
             ql.arch.regs.rax = -1
             return
-
-        # 在 canvas 上逐个像素绘制 (用矩形或点，效率较低，但实现简单)
-        canvas = win.canvas
-        for row in range(height):
-            for col in range(width):
-                idx = (row * width + col) * 3
-                r, g, b = pixels[idx], pixels[idx+1], pixels[idx+2]
-                color_hex = f"#{r:02x}{g:02x}{b:02x}"
-                canvas.create_rectangle(x + col, y + row, x + col + 1, y + row + 1,
-                                        outline=color_hex, fill=color_hex)
-        ql.arch.regs.rax = 0
+        try:
+            img = Image.frombytes('RGB', (width, height), pixels)
+            photo = ImageTk.PhotoImage(img)
+            if not hasattr(win.canvas, '_buffer_images'):
+                win.canvas._buffer_images = []
+            win.canvas._buffer_images.append(photo)
+            # 创建图像项（如果不存在）或更新现有图像
+            image_item_id = f"_buffer_{x}_{y}_{width}_{height}"
+            # 检查是否已存在图像项
+            existing_item = None
+            for item in win.canvas.find_all():
+                if win.canvas.type(item) == 'image' and str(item) == image_item_id:
+                    existing_item = item
+                    break
+            if existing_item:
+                # 更新现有图像
+                win.canvas.itemconfig(existing_item, image=photo)
+            else:
+                # 创建新图像
+                win.canvas.create_image(x, y, image=photo, anchor='nw', tags=image_item_id)
+            ql.arch.regs.rax = 0
+        except Exception as e:
+            # 备用方法: 使用 create_image 直接绘制
+            try:
+                img = Image.frombytes('RGB', (width, height), pixels)
+                photo = ImageTk.PhotoImage(img)
+                if not hasattr(win.canvas, '_buffer_images'):
+                    win.canvas._buffer_images = []
+                win.canvas._buffer_images.append(photo)
+                win.canvas.create_image(x, y, image=photo, anchor='nw')
+                ql.arch.regs.rax = 0
+            except Exception as e2:
+                print(f"[xapi_WriteBuffer] 错误: {e2}")
+                ql.arch.regs.rax = -1
 
     elif syscall_num == 7417:  # xapi_ReadBufferAO (RGBA)
         handle = ql.arch.regs.rdi
@@ -488,6 +510,7 @@ def gui_syscall(ql: Qiling):
             print(f"[xapi_ReadBufferAO] 错误: {e}")
             ql.arch.regs.rax = -1
 
+
     elif syscall_num == 7408:  # xapi_WriteBufferAO (RGBA)
         handle = ql.arch.regs.rdi
         x = ql.arch.regs.rsi
@@ -495,30 +518,38 @@ def gui_syscall(ql: Qiling):
         width = ql.arch.regs.r10
         height = ql.arch.regs.r8
         buffer_ptr = ql.arch.regs.r9
-
         win = windows.get(handle)
         if not win or not hasattr(win, 'canvas'):
             ql.arch.regs.rax = -1
             return
-
         data_size = width * height * 4
         pixels = ql.mem.read(buffer_ptr, data_size)
         if len(pixels) != data_size:
             print(f"[xapi_WriteBufferAO] 读取内存失败")
             ql.arch.regs.rax = -1
             return
-
-        canvas = win.canvas
-        for row in range(height):
-            for col in range(width):
-                idx = (row * width + col) * 4
-                r, g, b, a = pixels[idx], pixels[idx+1], pixels[idx+2], pixels[idx+3]
-                # Alpha 混合暂不实现，直接使用 RGB 绘制
-                color_hex = f"#{r:02x}{g:02x}{b:02x}"
-                canvas.create_rectangle(x + col, y + row, x + col + 1, y + row + 1,
-                                        outline=color_hex, fill=color_hex)
-        ql.arch.regs.rax = 0
-
+        try:
+            img = Image.frombytes('RGBA', (width, height), pixels)
+            photo = ImageTk.PhotoImage(img)
+            # 保存引用
+            if not hasattr(win.canvas, '_buffer_images'):
+                win.canvas._buffer_images = []
+            win.canvas._buffer_images.append(photo)
+            # 创建或更新图像项
+            image_item_id = f"_buffer_ao_{x}_{y}_{width}_{height}"
+            existing_item = None
+            for item in win.canvas.find_all():
+                if win.canvas.type(item) == 'image' and str(item) == image_item_id:
+                    existing_item = item
+                    break
+            if existing_item:
+                win.canvas.itemconfig(existing_item, image=photo)
+            else:
+                win.canvas.create_image(x, y, image=photo, anchor='nw', tags=image_item_id)
+            ql.arch.regs.rax = 0
+        except Exception as e:
+            print(f"[xapi_WriteBufferAO] 错误: {e}")
+            ql.arch.regs.rax = -1
     elif syscall_num == 7438:  # xapi_RefreshPartWindow
         handle = ql.arch.regs.rdi
 

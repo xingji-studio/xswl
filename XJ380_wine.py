@@ -156,30 +156,38 @@ def my_raw_syscall_handler(ql: Qiling):
     elif syscall_num == 7427:  # xapi_OutputSerial
         string_output = ql.mem.string(ql.arch.regs.rdi)
         print(f"[SERIAL] {string_output}")
-
     elif syscall_num == 7387:  # xapi_OpenFile
         file_path = ql.mem.string(ql.arch.regs.rdi)
-        full_path =path_tooth(file_path)
+        full_path = path_tooth(file_path)
 
         try:
             with open(full_path, "rb") as f:
                 file_data = f.read()
 
-            # 分配内存并记录
-            buffer_addr = ql.mem.map_anywhere(len(file_data))
-            ql.mem.write(buffer_addr, file_data)
-            allocated_memory[buffer_addr] = len(file_data)
+            # 使用已有的内存，不要每次都 map 新的
+            # 先检查是否已有该文件的内存映射
+            cache_key = full_path
+            if not hasattr(ql, '_file_cache'):
+                ql._file_cache = {}
 
-            filename_bytes = file_path.encode('utf-8') + b'\x00'
-            filename_addr = ql.mem.map_anywhere(len(filename_bytes))
-            ql.mem.write(filename_addr, filename_bytes)
-            allocated_memory[filename_addr] = len(filename_bytes)
+            if cache_key in ql._file_cache:
+                # 重用已缓存的内存
+                buffer_addr, file_length = ql._file_cache[cache_key]
+            else:
+                # 分配新内存
+                buffer_addr = ql.mem.map_anywhere(len(file_data))
+                ql.mem.write(buffer_addr, file_data)
+                ql._file_cache[cache_key] = (buffer_addr, len(file_data))
 
             # 创建 XFILE 结构体
             packed = struct.pack("QQ", len(file_data), buffer_addr)
             xfile_addr = ql.mem.map_anywhere(16)
             ql.mem.write(xfile_addr, packed)
-            allocated_memory[xfile_addr] = 16
+
+            # 记录以便释放
+            if not hasattr(ql, '_open_files'):
+                ql._open_files = {}
+            ql._open_files[xfile_addr] = (cache_key, buffer_addr)
 
             ql.arch.regs.rax = xfile_addr
 
@@ -642,8 +650,14 @@ def exit_trampoline(ql):
     """main 返回后执行这里，然后停止模拟"""
     print("[+] main 返回，模拟结束")
     ql.emu_stop()
+cycle_int_a=0
+cycle_Hz=90
 def on_block(ql, address, size):
-    global is_inter,saved_regs_for_event,trampoline_ret_addr
+    global is_inter, saved_regs_for_event, trampoline_ret_addr,cycle_int_a
+    if(cycle_Hz!=cycle_int_a):
+        cycle_int_a=cycle_int_a+1
+        return 0
+    cycle_int_a=0
     for i in windows:
         windows[i].update()
     if(event_list==[]or is_inter==True):
