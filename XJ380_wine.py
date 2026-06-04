@@ -650,17 +650,11 @@ def exit_trampoline(ql):
     """main 返回后执行这里，然后停止模拟"""
     print("[+] main 返回，模拟结束")
     ql.emu_stop()
-cycle_int_a=0
-cycle_Hz=90
 def on_block(ql, address, size):
-    global is_inter, saved_regs_for_event, trampoline_ret_addr,cycle_int_a
-    if(cycle_Hz!=cycle_int_a):
-        cycle_int_a=cycle_int_a+1
-        return 0
-    cycle_int_a=0
+    global is_inter, saved_regs_for_event, trampoline_ret_addr
     for i in windows:
         windows[i].update()
-    if(event_list==[]or is_inter==True):
+    if event_list==[]or is_inter==True:
         return 0
     i=event_list[0]
     saved_regs_for_event = {
@@ -717,7 +711,6 @@ def on_block(ql, address, size):
         ql.arch.regs.rdi = 6      # MSG_CRL 消息类型
         ql.arch.regs.rsi = i[2]    # 控件识别码 CRLid
         ql.arch.regs.rdx = 0       # 控件数据（按钮无额外数据）
-
     del event_list[0]
     is_inter=True
     return 0;
