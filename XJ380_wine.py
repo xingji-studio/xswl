@@ -1,8 +1,9 @@
 #Copyright (c) 2026 yaoyaomenke
 #SPDX-License-Identifier: MIT
 
-
+import threading
 import subprocess
+from time import sleep
 from tkinter import messagebox
 
 from qiling import Qiling
@@ -33,17 +34,6 @@ allocated_memory = {}
 import struct
 from elftools.elf.elffile import ELFFile
 
-def get_export_address(elf_path, func_name):
-    with open(elf_path, 'rb') as f:
-        elf = ELFFile(f)
-        symtab = elf.get_section_by_name('.symtab') or elf.get_section_by_name('.dynsym')
-
-        if symtab:
-            for sym in symtab.iter_symbols():
-
-                if sym.name == func_name and sym['st_shndx'] != 'SHN_UNDEF':
-                    return sym['st_value']
-    return None
 def get_defalt_char(char):
     if(char=='Escape'):return 128
     elif(char=='BackSpace'):return 0x08
@@ -611,45 +601,11 @@ def my_raw_syscall_handler(ql: Qiling):
     #============剩下的就是gui的事情了===============
 
     return 0
-
-if(len(sys.argv)==1):
-    print("可执行文件路径这种其他参数跑哪儿去了?")
-    exit(0)
-# 初始化 Qiling
-ql = Qiling([sys.argv[1]], "./out", verbose=QL_VERBOSE.DEBUG,profile="./linux.ql")
-# 设置入口点
-main_addr =get_export_address(sys.argv[1], "_Z4mainiPPcS0_")
-#把参数放好
-for_exe_argv=[]
-for i in sys.argv[2:]:
-    # 分配内存存储参数字符串（包含 null 结尾）
-    arg_bytes = i.encode('utf-8') + b'\x00'
-    arg_addr = ql.mem.map_anywhere(len(arg_bytes))
-    ql.mem.write(arg_addr, arg_bytes)
-    for_exe_argv.append(arg_addr)
-
-# 将参数指针数组打包成连续的 8 字节地址
-if for_exe_argv:
-    argv_array = struct.pack(f"{len(for_exe_argv)}Q", *for_exe_argv)
-    argv_array += b'\x00' * 8  # 添加一个 NULL 指针作为结束标记（可选）
-else:
-    argv_array = b'\x00' * 8  # 无参数时只放 NULL 指针
-
-
-is_inter=False
-saved_regs_for_event = None
-
-# 分配内存并写入参数指针数组
-argv_array_addr = ql.mem.map_anywhere(len(argv_array))
-ql.mem.write(argv_array_addr, argv_array)
-
-ql.arch.regs.rdi = len(for_exe_argv)  # argc
-ql.arch.regs.rsi = argv_array_addr    # argv
-print(f"[+] main 函数地址: 0x{main_addr:x}")
 def exit_trampoline(ql):
     """main 返回后执行这里，然后停止模拟"""
     print("[+] main 返回，模拟结束")
     ql.emu_stop()
+
 def on_block(ql, address, size):
     global is_inter, saved_regs_for_event, trampoline_ret_addr
     for i in windows:
@@ -714,23 +670,9 @@ def on_block(ql, address, size):
     del event_list[0]
     is_inter=True
     return 0;
-# 在栈上分配一个位置，写入 trampoline 的地址
-trampoline_addr = ql.mem.map_anywhere(0x1000) # 映射一页内存
-ql.hook_block(on_block)
-ql.hook_address(exit_trampoline, trampoline_addr)
-
-# 修改栈顶的返回地址为 trampoline_addr
-# 注意：不同架构的栈指针寄存器不同，这里以 x64 为例
-ql.stack_push(trampoline_addr)
-# 注册系统调用钩子
-ql.hook_insn(my_raw_syscall_handler, UC_X86_INS_SYSCALL)
-
-
-trampoline_ret_addr= ql.mem.map_anywhere(0x1000)
-
-# 写入 ret 指令 (0xC3)
-ql.mem.write(trampoline_ret_addr, b'\xC3')
-
+if(len(sys.argv)==1):
+    print("可执行文件路径这种其他参数跑哪儿去了?")
+    exit(0)
 
 
 def event_return_hook(ql: Qiling):
@@ -743,21 +685,69 @@ def event_return_hook(ql: Qiling):
         in_event_handler = False
     # 注意：不修改 rip，执行完钩子后会继续执行蹦床里的 ret 指令
     is_inter=False
+if __name__=="__main__":
+    # 初始化 Qiling
+    ql = Qiling([sys.argv[1]], "./out", verbose=QL_VERBOSE.DEBUG,profile="./linux.ql")
+    #把参数放好
+    for_exe_argv=[]
+    for i in sys.argv[2:]:
+        # 分配内存存储参数字符串（包含 null 结尾）
+        arg_bytes = i.encode('utf-8') + b'\x00'
+        arg_addr = ql.mem.map_anywhere(len(arg_bytes))
+        ql.mem.write(arg_addr, arg_bytes)
+        for_exe_argv.append(arg_addr)
 
-ql.hook_address(event_return_hook, trampoline_ret_addr)
-virtual_file = search_internet_infomation("status")
-ql.add_fs_mapper('/run/NetworkManager/status', virtual_file)
-virtual_file = search_internet_infomation("state")
-ql.add_fs_mapper('state', virtual_file)
-virtual_file = search_internet_infomation("ipv4")
-ql.add_fs_mapper('/run/NetworkManager/ipv4', virtual_file)
-virtual_file = search_internet_infomation("ipv6")
-ql.add_fs_mapper('/run/NetworkManager/ipv6', virtual_file)
-dns = dns_resolve("resolve")
-ql.add_fs_mapper('/run/dns/resolve', dns)
-dns_find = dns_resolve("server")
-ql.add_fs_mapper('/run/dns/server', dns_find)
-# 运行
-ql.run()
+    # 将参数指针数组打包成连续的 8 字节地址
+    if for_exe_argv:
+        argv_array = struct.pack(f"{len(for_exe_argv)}Q", *for_exe_argv)
+        argv_array += b'\x00' * 8  # 添加一个 NULL 指针作为结束标记（可选）
+    else:
+        argv_array = b'\x00' * 8  # 无参数时只放 NULL 指针
+
+
+    is_inter=False
+    saved_regs_for_event = None
+
+    # 分配内存并写入参数指针数组
+    argv_array_addr = ql.mem.map_anywhere(len(argv_array))
+    ql.mem.write(argv_array_addr, argv_array)
+
+    ql.arch.regs.rdi = len(for_exe_argv)  # argc
+    ql.arch.regs.rsi = argv_array_addr    # argv
+    # 在栈上分配一个位置，写入 trampoline 的地址
+    trampoline_addr = ql.mem.map_anywhere(0x1000) # 映射一页内存
+    ql.hook_block(on_block)
+    ql.hook_address(exit_trampoline, trampoline_addr)
+
+    # 修改栈顶的返回地址为 trampoline_addr
+    # 注意：不同架构的栈指针寄存器不同，这里以 x64 为例
+    ql.stack_push(trampoline_addr)
+    # 注册系统调用钩子
+    ql.hook_insn(my_raw_syscall_handler, UC_X86_INS_SYSCALL)
+
+
+    trampoline_ret_addr= ql.mem.map_anywhere(0x1000)
+
+    # 写入 ret 指令 (0xC3)
+    ql.mem.write(trampoline_ret_addr, b'\xC3')
+
+
+
+    ql.hook_address(event_return_hook, trampoline_ret_addr)
+    virtual_file = search_internet_infomation("status")
+    ql.add_fs_mapper('/run/NetworkManager/status', virtual_file)
+    virtual_file = search_internet_infomation("state")
+    ql.add_fs_mapper('state', virtual_file)
+    virtual_file = search_internet_infomation("ipv4")
+    ql.add_fs_mapper('/run/NetworkManager/ipv4', virtual_file)
+    virtual_file = search_internet_infomation("ipv6")
+    ql.add_fs_mapper('/run/NetworkManager/ipv6', virtual_file)
+    dns = dns_resolve("resolve")
+    ql.add_fs_mapper('/run/dns/resolve', dns)
+    dns_find = dns_resolve("server")
+    ql.add_fs_mapper('/run/dns/server', dns_find)
+
+    # 运行
+    ql.run()
 
 
